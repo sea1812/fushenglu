@@ -35,5 +35,5 @@ type TPlayer struct {
 	1、LoadPlayer(AId string) 按ID查询玩家数据，填充当前对象属性
 	2、SavePlayer()	保存玩家数据到数据库
 	3、InitPlayer() 按照初始化规则初始化玩家数据
-	4、
+	4、Die(AFlag interface) Game Over，结束该账号，参数是结束原因的结构
 */
