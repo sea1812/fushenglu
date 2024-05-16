@@ -1,6 +1,13 @@
 package Components
 
-import "github.com/gogf/gf/encoding/gjson"
+import (
+	"errors"
+	"fmt"
+	"github.com/gogf/gf/database/gdb"
+	"github.com/gogf/gf/database/gredis"
+	"github.com/gogf/gf/encoding/gjson"
+	"github.com/gogf/gf/frame/g"
+)
 
 /*
 	玩家类
@@ -41,7 +48,7 @@ type TPlayer struct {
 
 type TEvent struct {
 	EventId             int64  //事件ID
-	EventType           int    //事件类型，分为幸运、倒霉、一般三类
+	EventType           int    //事件类型，分为幸运、倒霉、一般三类，对应数值0、1、2
 	EventDescription    string //事件描述
 	EffectWealth        int64  //影响到Player的Wealth变动绝对值，可以是负数
 	EffectSalary        int64  //影响到Player的每天固定收入，为百分数
@@ -55,15 +62,82 @@ type TEvent struct {
 	EffectLuckyValue    int64  //影响到Player的幸运值
 }
 
+// Map 导出成g.Map
+func (p *TEvent) Map() *g.Map {
+	mMap := g.Map{
+		"EventId":             p.EventId,             //事件ID
+		"EventType":           p.EventType,           //事件类型，分为幸运、倒霉、一般三类
+		"EventDescription":    p.EventDescription,    //事件描述
+		"EffectWealth":        p.EffectWealth,        //影响到Player的Wealth变动绝对值，可以是负数
+		"EffectSalary":        p.EffectSalary,        //影响到Player的每天固定收入，为百分数
+		"EffectSalaryFloat":   p.EffectSalaryFloat,   //影响到Player的每天固定收入的浮动变量
+		"EffectExpenses":      p.EffectExpenses,      //影响到Player每天的固定支出，为百分数
+		"EffectExpensesFloat": p.EffectExpensesFloat, //影响到Player每天的固定支出的浮动变量
+		"EffectHealth":        p.EffectHealth,        //影响到Player的健康度
+		"EffectHealthBack":    p.EffectHealthBack,    //影响到Player每日自动回血的数值
+		"EffectHappiness":     p.EffectHappiness,     //影响到Player的快乐指数
+		"EffectHappinessBack": p.EffectHappinessBack, //影响到Player的每日自动恢复快乐指数
+		"EffectLuckyValue":    p.EffectLuckyValue,    //影响到Player的幸运值
+	}
+	return &mMap
+}
+
+// Json 导出成JSON字符串
+func (p *TEvent) Json() string {
+	mJson := gjson.New(p)
+	return mJson.Export()
+}
+
+// Key 生成Key字符串
+func (p *TEvent) Key() string {
+	mKey := fmt.Sprintf("%s-%d-%d", "a", p.EventType, p.EventId)
+	return mKey
+}
+
 /*
 	事件管理器对象
 */
 
 type TEvents struct {
+	Redis               *gredis.Redis
+	DB                  gdb.DB
 	TotalEventsCount    int64 //全部事件数量
 	GoodLuckEventsCount int64 //幸运事件数量
 	BadLuckEventsCount  int64 //倒霉事件数量
 	NormalEventsCount   int64 //一般事件数量
+}
+
+/*
+	事件管理器方法
+	1、Init(ARedisName) 初始化，连接到Redis数据库
+	2、Map() 导出成g.Map
+	3、AddEvent(AEvent) 添加新的事件
+	4、UpdateCount()	从数据库更新事件数量
+	5、RefreshRedis()	把数据从数据库全部更新到Redis
+	6、RefreshRedisById(AId) 更新单个事件从数据库到Redis
+	7、SetEventEnable(AId,AValue) 设置事件是否审核通过
+	8、DeleteEvent(AId) 从Redis和数据库中删除事件
+*/
+
+// Init 初始化，连接到Redis数据库
+func (p TEvents) Init(ARedisName string, ADbName string) {
+	p.Redis = g.Redis(ARedisName)
+	p.DB = g.DB(ADbName)
+}
+
+// AddEvent 添加新的事件，新增加的Event保存到数据库的同时更新到Redis
+func (p *TEvents) AddEvent(AEvent *TEvent) error {
+	if p.Redis == nil {
+		return errors.New("TEvents未指定Redis")
+	}
+	if p.DB == nil {
+		return errors.New("TEvents未指定DB")
+	}
+	//保存到DB
+	_, _ = p.DB.Model("").Insert(AEvent.Map())
+	//生成Redis的Key
+	mKey := AEvent.
+	//保存到Redis
 
 }
 
@@ -144,5 +218,5 @@ func (p *TPlayer) InitPlayer() {
 
 // GetNewEvent 获取新的事件，返回事件对象结构
 func (p *TPlayer) GetNewEvent() TEvent {
-
+	return TEvent{}
 }
