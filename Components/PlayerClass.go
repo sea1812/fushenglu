@@ -10,6 +10,19 @@ import (
 )
 
 /*
+	常量定义
+*/
+
+const (
+	C_EVENT_TYPE_NoRMAL   int = 0 //事件类型普通
+	C_EVENT_TYPE_GOODLUCK int = 1 //事件类型好运
+	C_EVENT_TYPE_BADLUCK  int = 2 //事件类型倒霉
+
+	C_EVENT_MODEL_NAME string = "events" //保存事件的表明
+	C_EVENT_KEY_PREFIX string = "event"  //事件保存在Redis里时的KEY前缀
+)
+
+/*
 	玩家类
 */
 
@@ -90,7 +103,7 @@ func (p *TEvent) Json() string {
 
 // Key 生成Key字符串
 func (p *TEvent) Key() string {
-	mKey := fmt.Sprintf("%s-%d-%d", "a", p.EventType, p.EventId)
+	mKey := fmt.Sprintf("%s_%d_%d", C_EVENT_KEY_PREFIX, p.EventType, p.EventId)
 	return mKey
 }
 
@@ -134,11 +147,18 @@ func (p *TEvents) AddEvent(AEvent *TEvent) error {
 		return errors.New("TEvents未指定DB")
 	}
 	//保存到DB
-	_, _ = p.DB.Model("").Insert(AEvent.Map())
+	_, err1 := p.DB.Model(C_EVENT_MODEL_NAME).Insert(AEvent.Map())
+	if err1 != nil {
+		return err1
+	}
 	//生成Redis的Key
-	mKey := AEvent.
+	mKey := AEvent.Key()
 	//保存到Redis
-
+	_, err2 := p.Redis.Do("SET", mKey, AEvent.Json())
+	if err2 != nil {
+		return err2
+	}
+	return nil
 }
 
 /*
