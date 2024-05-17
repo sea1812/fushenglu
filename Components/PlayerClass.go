@@ -101,7 +101,7 @@ func (p *TEvent) Json() string {
 	return mJson.Export()
 }
 
-// Key 生成Key字符串
+// Key 生成Key字符串，格式为前缀_类型_ID
 func (p *TEvent) Key() string {
 	mKey := fmt.Sprintf("%s_%d_%d", C_EVENT_KEY_PREFIX, p.EventType, p.EventId)
 	return mKey
@@ -238,5 +238,20 @@ func (p *TPlayer) InitPlayer() {
 
 // GetNewEvent 获取新的事件，返回事件对象结构
 func (p *TPlayer) GetNewEvent() TEvent {
+	/*
+		算法概述：
+		1、先按照幸运值和三种事件类型的权重，随机选出Event_Type
+		2、再按照Type，随机选出事件，组合出存储ID
+		3、取出对应Id的值，返回
+		幸运值与事件权重算法概述：
+		1、取100（幸运值最大值）以内的随机数
+		2、内幸运值为分界线，小于幸运值的为BadLuck概率
+		3、高于幸运值的，平均分为两部分，较低的部分为Normal，较高的为GoodLuck
+		4、举例：假设幸运值为50，生成的随机数按三个范围区间返回Type
+			(1)0-50为BadLuck
+			(2)50-75之间为Normal
+			(3)75-100为GoodLuck
+	*/
+
 	return TEvent{}
 }
