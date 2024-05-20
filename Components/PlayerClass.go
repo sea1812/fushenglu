@@ -1,12 +1,14 @@
 package Components
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"github.com/gogf/gf/database/gdb"
 	"github.com/gogf/gf/database/gredis"
 	"github.com/gogf/gf/encoding/gjson"
 	"github.com/gogf/gf/frame/g"
+	"math/big"
 )
 
 /*
@@ -18,8 +20,10 @@ const (
 	C_EVENT_TYPE_GOODLUCK int = 1 //事件类型好运
 	C_EVENT_TYPE_BADLUCK  int = 2 //事件类型倒霉
 
-	C_EVENT_MODEL_NAME string = "events" //保存事件的表明
-	C_EVENT_KEY_PREFIX string = "event"  //事件保存在Redis里时的KEY前缀
+	C_EVENT_MODEL_NAME  string = "events"     //保存事件的表明
+	C_EVENT_KEY_PREFIX  string = "event"      //事件保存在Redis里时的KEY前缀
+	C_EVENTS_REDIS_NAME string = "event_data" //存储Event数据的Redis连接名
+	C_EVENTS_DB_NAME    string = "event_data" //存储Event数据的数据库连接名
 )
 
 /*
@@ -130,6 +134,7 @@ type TEvents struct {
 	6、RefreshRedisById(AId) 更新单个事件从数据库到Redis
 	7、SetEventEnable(AId,AValue) 设置事件是否审核通过
 	8、DeleteEvent(AId) 从Redis和数据库中删除事件
+	9、GetEventById(AId) 获取指定ID的事件
 */
 
 // Init 初始化，连接到Redis数据库
@@ -159,6 +164,76 @@ func (p *TEvents) AddEvent(AEvent *TEvent) error {
 		return err2
 	}
 	return nil
+}
+
+// UpdateCount 从数据库更新事件数量
+func (p *TEvents) UpdateCount() {
+	res, _ := p.DB.Model(C_EVENT_MODEL_NAME).Fields("Count(*) as aa,EventType").Group("EventType").All()
+	for _, v := range res {
+		switch v["E_Type"].Int() {
+		case C_EVENT_TYPE_NoRMAL:
+			p.NormalEventsCount = v["aa"].Int64()
+		case C_EVENT_TYPE_GOODLUCK:
+			p.GoodLuckEventsCount = v["aa"].Int64()
+		case C_EVENT_TYPE_BADLUCK:
+			p.BadLuckEventsCount = v["aa"].Int64()
+		}
+	}
+	p.TotalEventsCount = p.NormalEventsCount + p.GoodLuckEventsCount + p.BadLuckEventsCount
+}
+
+// RefreshRedis 把数据从数据库全部更新到Redis
+func (p *TEvents) RefreshRedis() {
+	//从数据库里取出所有事件记录
+	res, _ := p.DB.Model(C_EVENT_MODEL_NAME).All()
+	for _, v := range res {
+		mEvent := TEvent{
+			EventId:             v["EventId"].Int64(),
+			EventType:           v["EventType"].Int(),
+			EventDescription:    v["EventDescription"].String(),
+			EffectWealth:        v["EffectWealth"].Int64(),
+			EffectSalary:        v["EffectSalary"].Int64(),
+			EffectSalaryFloat:   v["EffectSalaryFloat"].Int64(),
+			EffectExpenses:      v["EffectExpenses"].Int64(),
+			EffectExpensesFloat: v["EffectExpensesFloat"].Int64(),
+			EffectHealth:        v["EffectHealth"].Int64(),
+			EffectHealthBack:    v["EffectHealthBack"].Int64(),
+			EffectHappiness:     v["EffectHappiness"].Int64(),
+			EffectHappinessBack: v["EffectHappinessBack"].Int64(),
+			EffectLuckyValue:    v["EffectLuckyValue"].Int64(),
+		}
+		mKey := mEvent.Key()
+		mValue := mEvent.Json()
+		//写入Redis
+		_, _ = p.Redis.Do("SET", mKey, mValue)
+	}
+}
+
+// RefreshRedisById 更新单个事件从数据库到Redis
+func (p *TEvents) RefreshRedisById(AId int64) {
+	//从数据库取出指定ID的EVENT记录
+	v, _ := p.DB.Model(C_EVENT_MODEL_NAME).Wheref("EventID=?", AId).One()
+	if v.IsEmpty() == false {
+		mEvent := TEvent{
+			EventId:             v["EventId"].Int64(),
+			EventType:           v["EventType"].Int(),
+			EventDescription:    v["EventDescription"].String(),
+			EffectWealth:        v["EffectWealth"].Int64(),
+			EffectSalary:        v["EffectSalary"].Int64(),
+			EffectSalaryFloat:   v["EffectSalaryFloat"].Int64(),
+			EffectExpenses:      v["EffectExpenses"].Int64(),
+			EffectExpensesFloat: v["EffectExpensesFloat"].Int64(),
+			EffectHealth:        v["EffectHealth"].Int64(),
+			EffectHealthBack:    v["EffectHealthBack"].Int64(),
+			EffectHappiness:     v["EffectHappiness"].Int64(),
+			EffectHappinessBack: v["EffectHappinessBack"].Int64(),
+			EffectLuckyValue:    v["EffectLuckyValue"].Int64(),
+		}
+		mKey := mEvent.Key()
+		mValue := mEvent.Json()
+		//写入Redis
+		_, _ = p.Redis.Do("SET", mKey, mValue)
+	}
 }
 
 /*
@@ -238,6 +313,7 @@ func (p *TPlayer) InitPlayer() {
 
 // GetNewEvent 获取新的事件，返回事件对象结构
 func (p *TPlayer) GetNewEvent() TEvent {
+	var mEvent TEvent
 	/*
 		算法概述：
 		1、先按照幸运值和三种事件类型的权重，随机选出Event_Type
@@ -252,6 +328,38 @@ func (p *TPlayer) GetNewEvent() TEvent {
 			(2)50-75之间为Normal
 			(3)75-100为GoodLuck
 	*/
+	//取100以内的随机数
+	n, _ := rand.Int(rand.Reader, big.NewInt(100))
+	var mType int = C_EVENT_TYPE_NoRMAL
+	if n.Int64() <= p.LuckyValue {
+		//小于幸运值，返回BadLuck
+		mType = C_EVENT_TYPE_BADLUCK
+	} else {
+		//计算GoodLuck和Normal的中值
+		mMiddle := (100 - p.LuckyValue) / 2
+		//计算挡板值
+		mDiv := n.Int64() + mMiddle
+		if n.Int64() > mDiv {
+			mType = C_EVENT_TYPE_GOODLUCK
+		} else {
+			mType = C_EVENT_TYPE_NoRMAL
+		}
+	}
+	//获取随机Event
+	mEvents := TEvents{}
+	mEvents.Init(C_EVENTS_REDIS_NAME, C_EVENTS_DB_NAME)
+	mEvent.EventType = mType
+	var mSelectedId *big.Int
+	switch mEvent.EventType {
+	case C_EVENT_TYPE_NoRMAL:
+		mSelectedId, _ = rand.Int(rand.Reader, big.NewInt(mEvents.NormalEventsCount))
+	case C_EVENT_TYPE_GOODLUCK:
+		mSelectedId, _ = rand.Int(rand.Reader, big.NewInt(mEvents.GoodLuckEventsCount))
+	case C_EVENT_TYPE_BADLUCK:
+		mSelectedId, _ = rand.Int(rand.Reader, big.NewInt(mEvents.BadLuckEventsCount))
+	}
+	//获取指定ID的事件
+	mEvent.EventId = mSelectedId.Int64()
 
-	return TEvent{}
+	return mEvent
 }
